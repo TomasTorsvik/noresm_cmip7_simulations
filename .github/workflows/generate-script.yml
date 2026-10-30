@@ -1,0 +1,71 @@
+name: Generate a NorESM Run Script from Issue
+
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  create-script:
+    # Only execute if the label added is named "make-script"
+    if: github.event.label.name == 'make-script'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract Script Content
+        id: parse_issue
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          mkdir -p scripts
+          FILENAME="scripts/run_${{ github.event.issue.title }}.sh"
+
+          # Initialize the file with your specific header
+          cat <<EOSF > "$FILENAME"
+          #!/bin/bash
+          set -e
+
+          EOSF
+
+          # Extract block content safely
+          if echo "$ISSUE_BODY" | grep -q "```bash"; then
+            CONTENT=(echo "ISSUE_BODY" | sed -n '/```bash/,/```/p' | sed '1d;\$d')
+          elif echo "\$ISSUE_BODY" | grep -q "```sh"; then
+            CONTENT=$(echo "$ISSUE_BODY" | sed -n '/```sh/,/```/p' | sed '1d;$d')
+          else
+            CONTENT="$ISSUE_BODY"
+          fi
+
+          # Append script body using the requested here-doc format
+          cat <<EOSF >> "$FILENAME"
+          $CONTENT
+          EOSF
+
+          chmod +x "$FILENAME"
+
+        
+      - name: Run script generator
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const issueBody = context.payload.issue.body;
+            const filename = `scripts/run_${context.payload.issue.number}.sh`;
+
+            // Basic extraction or processing logic here
+            const scriptContent = `# Generated from Issue #${context.payload.issue.number}\nprint("Hello from automated script")`;
+
+            fs.writeFileSync(filename, scriptContent);
+            console.h(`Created ${filename}`);
+
+      - name: Commit and Push
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add scripts/
+          git commit -m "Auto-generate script from issue #${{ github.event.issue.number }}"
+          git push
